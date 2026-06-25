@@ -33,7 +33,7 @@ type ApiError = {
   message?: string
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8080/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? '/api'
 const AUTH_STORAGE_KEY = 'finance-tracker-auth'
 
 const initialAuthForm = {
@@ -290,7 +290,7 @@ function App() {
       {message ? <div className="feedback success">{message}</div> : null}
       {error ? <div className="feedback error">{error}</div> : null}
 
-      <section className="grid two-columns">
+      <section className="grid">
         <article className="panel">
           <div className="panel-header">
             <h2>{authMode === 'register' ? 'Register' : 'Login'}</h2>
@@ -342,18 +342,6 @@ function App() {
               {authMode === 'register' ? 'Register + Login' : 'Login'}
             </button>
           </form>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>API Akisi</h2>
-          </div>
-          <ul className="timeline">
-            <li>1. `POST /api/auth/register` ile kullanici olustur.</li>
-            <li>2. Access token ile kategori ve transaction olustur.</li>
-            <li>3. Dashboard sadece login olan kullanicinin verisini gosterir.</li>
-            <li>4. Token eskirse refresh token ile yeni access token alinabilir.</li>
-          </ul>
         </article>
       </section>
 
