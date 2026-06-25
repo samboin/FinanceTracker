@@ -67,6 +67,9 @@ function App() {
   const [categories, setCategories] = useState<Category[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [filterType, setFilterType] = useState<'ALL' | TransactionType>('ALL')
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
+  const [deleteTarget, setDeleteTarget] = useState<Transaction | null>(null)
+  const [editForm, setEditForm] = useState(initialTransactionForm)
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -121,11 +124,20 @@ function App() {
     }
 
     const responseText = await response.text()
-    const data = responseText ? JSON.parse(responseText) : null
+    let data: unknown = null
+
+    if (responseText) {
+      try {
+        data = JSON.parse(responseText)
+      } catch {
+        data = responseText
+      }
+    }
 
     if (!response.ok) {
-      const apiError = data as ApiError
-      throw new Error(apiError.message ?? 'Unexpected API error')
+      const apiError = typeof data === 'object' && data !== null ? (data as ApiError) : null
+      const fallbackMessage = response.status === 0 ? 'Backend ulasilamiyor' : `HTTP ${response.status}`
+      throw new Error(apiError?.message ?? (typeof data === 'string' ? data : fallbackMessage))
     }
 
     return data as T
@@ -247,6 +259,75 @@ function App() {
     }
   }
 
+  function openEditModal(transaction: Transaction) {
+    setEditForm({
+      amount: String(transaction.amount),
+      description: transaction.description,
+      type: transaction.type,
+      transactionDate: transaction.transactionDate,
+      categoryId: transaction.categoryId ? String(transaction.categoryId) : '',
+    })
+    setEditingTransaction(transaction)
+    setError(null)
+  }
+
+  function closeEditModal() {
+    setEditingTransaction(null)
+    setEditForm(initialTransactionForm)
+  }
+
+  async function handleEditSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!auth || !editingTransaction) return
+
+    setError(null)
+    setMessage(null)
+
+    try {
+      const updatedTransaction = await apiFetch<Transaction>(
+        `/transactions/${editingTransaction.id}`,
+        {
+          method: 'PUT',
+          body: JSON.stringify({
+            amount: Number(editForm.amount),
+            description: editForm.description,
+            type: editForm.type,
+            transactionDate: editForm.transactionDate,
+            categoryId: editForm.categoryId ? Number(editForm.categoryId) : null,
+          }),
+        },
+        auth.accessToken,
+      )
+
+      setTransactions((current) =>
+        current
+          .map((transaction) => (transaction.id === updatedTransaction.id ? updatedTransaction : transaction))
+          .sort((a, b) => b.transactionDate.localeCompare(a.transactionDate)),
+      )
+      closeEditModal()
+      setMessage(`Islem guncellendi: ${updatedTransaction.description}`)
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Islem guncellenemedi')
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!auth || !deleteTarget) return
+
+    setError(null)
+    setMessage(null)
+
+    try {
+      await apiFetch<void>(`/transactions/${deleteTarget.id}`, { method: 'DELETE' }, auth.accessToken)
+      setTransactions((current) => current.filter((transaction) => transaction.id !== deleteTarget.id))
+      setMessage(`Islem silindi: ${deleteTarget.description}`)
+      setDeleteTarget(null)
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : 'Islem silinemedi')
+      setDeleteTarget(null)
+    }
+  }
+
   async function handleLogout() {
     if (!auth) return
 
@@ -270,15 +351,14 @@ function App() {
           <p className="eyebrow">Finance Tracker</p>
           <h1>Kisisel finans akisina tek ekranda bak</h1>
           <p className="hero-copy">
-            JWT authentication, kategori yonetimi ve transaction CRUD akisini gorsel olarak dogrulamak icin
-            hazirlanmis demo panel.
+            Gelir ve giderlerini kategorilere ayir, islemlerini duzenle ve net bakiyeni tek bakista takip et.
           </p>
         </div>
 
         <div className="hero-card">
           <span className="hero-card-label">Durum</span>
           <strong>{auth ? `Hos geldin, ${auth.fullName}` : 'Henüz giris yapilmadi'}</strong>
-          <p>{auth ? auth.email : 'Register veya login formunu kullanarak akisi deneyebilirsin.'}</p>
+          <p>{auth ? auth.email : 'Hesabin yoksa kayit ol, varsa giris yaparak basla.'}</p>
           {auth ? (
             <button type="button" className="secondary-button" onClick={handleLogout}>
               Logout
@@ -290,60 +370,62 @@ function App() {
       {message ? <div className="feedback success">{message}</div> : null}
       {error ? <div className="feedback error">{error}</div> : null}
 
-      <section className="grid">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>{authMode === 'register' ? 'Register' : 'Login'}</h2>
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => setAuthMode((current) => (current === 'register' ? 'login' : 'register'))}
-            >
-              {authMode === 'register' ? 'Login ekranina gec' : 'Register ekranina gec'}
-            </button>
-          </div>
+      {!auth ? (
+        <section className="grid">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>{authMode === 'register' ? 'Register' : 'Login'}</h2>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => setAuthMode((current) => (current === 'register' ? 'login' : 'register'))}
+              >
+                {authMode === 'register' ? 'Login ekranina gec' : 'Register ekranina gec'}
+              </button>
+            </div>
 
-          <form className="form-grid" onSubmit={handleAuthSubmit}>
-            {authMode === 'register' ? (
+            <form className="form-grid" onSubmit={handleAuthSubmit}>
+              {authMode === 'register' ? (
+                <label>
+                  Full name
+                  <input
+                    value={authForm.fullName}
+                    onChange={(event) => setAuthForm((current) => ({ ...current, fullName: event.target.value }))}
+                    placeholder="Jarvis Developer"
+                    required
+                  />
+                </label>
+              ) : null}
+
               <label>
-                Full name
+                Email
                 <input
-                  value={authForm.fullName}
-                  onChange={(event) => setAuthForm((current) => ({ ...current, fullName: event.target.value }))}
-                  placeholder="Jarvis Developer"
+                  type="email"
+                  value={authForm.email}
+                  onChange={(event) => setAuthForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="jarvis@example.com"
                   required
                 />
               </label>
-            ) : null}
 
-            <label>
-              Email
-              <input
-                type="email"
-                value={authForm.email}
-                onChange={(event) => setAuthForm((current) => ({ ...current, email: event.target.value }))}
-                placeholder="jarvis@example.com"
-                required
-              />
-            </label>
+              <label>
+                Password
+                <input
+                  type="password"
+                  value={authForm.password}
+                  onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
+                  placeholder="minimum 8 karakter"
+                  required
+                />
+              </label>
 
-            <label>
-              Password
-              <input
-                type="password"
-                value={authForm.password}
-                onChange={(event) => setAuthForm((current) => ({ ...current, password: event.target.value }))}
-                placeholder="minimum 8 karakter"
-                required
-              />
-            </label>
-
-            <button type="submit" disabled={isLoading}>
-              {authMode === 'register' ? 'Register + Login' : 'Login'}
-            </button>
-          </form>
-        </article>
-      </section>
+              <button type="submit" disabled={isLoading}>
+                {authMode === 'register' ? 'Register + Login' : 'Login'}
+              </button>
+            </form>
+          </article>
+        </section>
+      ) : null}
 
       <section className="stats-grid">
         <article className="stat-card">
@@ -512,12 +594,13 @@ function App() {
                 <th>Kategori</th>
                 <th>Tip</th>
                 <th>Tutar</th>
+                <th>Islemler</th>
               </tr>
             </thead>
             <tbody>
               {filteredTransactions.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="empty-state">
+                  <td colSpan={6} className="empty-state">
                     Henüz transaction yok.
                   </td>
                 </tr>
@@ -531,6 +614,26 @@ function App() {
                       <span className={`tag ${transaction.type.toLowerCase()}`}>{transaction.type}</span>
                     </td>
                     <td>{formatCurrency(transaction.amount)}</td>
+                    <td>
+                      <div className="row-actions">
+                        <button
+                          type="button"
+                          className="icon-button edit"
+                          onClick={() => openEditModal(transaction)}
+                          disabled={!auth}
+                        >
+                          Duzenle
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-button delete"
+                          onClick={() => setDeleteTarget(transaction)}
+                          disabled={!auth}
+                        >
+                          Sil
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -538,6 +641,103 @@ function App() {
           </table>
         </div>
       </section>
+
+      {editingTransaction ? (
+        <div className="modal-backdrop" onClick={closeEditModal}>
+          <div className="modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <h3>Transaction duzenle</h3>
+            <p className="modal-copy">{editingTransaction.description}</p>
+            <form className="form-grid" onSubmit={handleEditSubmit}>
+              <label>
+                Tutar
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={editForm.amount}
+                  onChange={(event) => setEditForm((current) => ({ ...current, amount: event.target.value }))}
+                  required
+                />
+              </label>
+
+              <label>
+                Aciklama
+                <input
+                  value={editForm.description}
+                  onChange={(event) => setEditForm((current) => ({ ...current, description: event.target.value }))}
+                  required
+                />
+              </label>
+
+              <label>
+                Tip
+                <select
+                  value={editForm.type}
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, type: event.target.value as TransactionType }))
+                  }
+                >
+                  <option value="EXPENSE">Expense</option>
+                  <option value="INCOME">Income</option>
+                </select>
+              </label>
+
+              <label>
+                Tarih
+                <input
+                  type="date"
+                  value={editForm.transactionDate}
+                  onChange={(event) =>
+                    setEditForm((current) => ({ ...current, transactionDate: event.target.value }))
+                  }
+                  required
+                />
+              </label>
+
+              <label>
+                Kategori
+                <select
+                  value={editForm.categoryId}
+                  onChange={(event) => setEditForm((current) => ({ ...current, categoryId: event.target.value }))}
+                >
+                  <option value="">Kategori sec</option>
+                  {categories.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="modal-actions">
+                <button type="button" className="secondary-button" onClick={closeEditModal}>
+                  Iptal
+                </button>
+                <button type="submit">Kaydet</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {deleteTarget ? (
+        <div className="modal-backdrop" onClick={() => setDeleteTarget(null)}>
+          <div className="modal" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true">
+            <h3>Transaction silinsin mi?</h3>
+            <p className="modal-copy">
+              <strong>{deleteTarget.description}</strong> islemini silmek istediginize emin misiniz?
+            </p>
+            <div className="modal-actions">
+              <button type="button" className="secondary-button" onClick={() => setDeleteTarget(null)}>
+                Vazgec
+              </button>
+              <button type="button" className="danger-button" onClick={() => void handleDeleteConfirm()}>
+                Evet, sil
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }
