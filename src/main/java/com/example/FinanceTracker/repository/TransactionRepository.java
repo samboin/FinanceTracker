@@ -11,16 +11,20 @@ import java.util.List;
 
 public interface TransactionRepository extends JpaRepository<Transaction, Long> {
 
-	boolean existsByCategoryId(Long categoryId);
+	boolean existsByCategoryIdAndUserId(Long categoryId, Long userId);
+
+	java.util.Optional<Transaction> findByIdAndUserId(Long id, Long userId);
 
 	@Query("""
 			SELECT t FROM Transaction t
-			WHERE (:type IS NULL OR t.type = :type)
+			WHERE t.user.id = :userId
+			  AND (:type IS NULL OR t.type = :type)
 			  AND (:from IS NULL OR t.transactionDate >= :from)
 			  AND (:to IS NULL OR t.transactionDate <= :to)
 			ORDER BY t.transactionDate DESC
 			""")
 	List<Transaction> findByFilters(
+			@Param("userId") Long userId,
 			@Param("type") TransactionType type,
 			@Param("from") LocalDate from,
 			@Param("to") LocalDate to

@@ -2,6 +2,7 @@ package com.example.FinanceTracker.exception;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -25,6 +26,16 @@ public class GlobalExceptionHandler {
 	@ExceptionHandler(BusinessRuleException.class)
 	public ResponseEntity<ErrorResponse> handleBusinessRule(BusinessRuleException ex) {
 		return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+	}
+
+	@ExceptionHandler(AuthenticationException.class)
+	public ResponseEntity<ErrorResponse> handleAuthentication(AuthenticationException ex) {
+		return buildResponse(HttpStatus.UNAUTHORIZED, ex.getMessage());
+	}
+
+	@ExceptionHandler(AccessDeniedException.class)
+	public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex) {
+		return buildResponse(HttpStatus.FORBIDDEN, "Access denied");
 	}
 
 	@ExceptionHandler(MethodArgumentNotValidException.class)
